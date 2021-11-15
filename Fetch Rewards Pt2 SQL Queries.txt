@@ -1,0 +1,147 @@
+Dialect used: Databricks SQL
+
+Q1) What are the top 5 brands by receipts scanned for most recent month?
+
+A1) 
+
+--table for top 5 brands by scanned receipts in the previous month
+
+create or replace temp view top_5_brands as
+	select b.name as brand_name, count(i.receiptId) as scan_cnt		
+	from brands b
+	inner join item_list i
+		on b.barcode = i.barcode and b.brandCode = i.brandCode
+	inner join receipts r
+		on i.receiptId = r.receiptId
+	where dateScanned between add_months(current_date(), -2) and add_months(current_date(), -1)
+	group by 1
+	order by count(i.receiptId) desc
+	limit 5
+
+--display top 5 brands from previous month
+
+select *
+from top_5_brands
+
+Q2) How does the ranking of the top 5 brands by receipts scanned for the recent month compare to the ranking for the previous month?
+
+A2) 
+
+--table for brands and their respective ranking in current month
+
+create or replace temp view brand_ranking_current_month as
+	select b.name as brand_name, dense_rank() over (partition by count(i.receiptId) order by count(i.receiptId) desc) as brand_rank
+	from brands b
+	inner join item_list i
+		on b.barcode = i.barcode and b.brandCode = i.brandCode
+	inner join receipts r
+		on i.receiptId = r.receiptId
+	where dateScanned between add_months(current_date(), -1) and current_date()
+	group by b.name;
+
+--table for brands and their respective ranking in previous month
+
+create or replace temp view brand_ranking_prev_month as
+	select b.name as brand_name, dense_rank() over (partition by count(i.receiptId) order by count(i.receiptId) desc) as brand_rank
+	from brands b
+	inner join item_list i
+		on b.barcode = i.barcode and b.brandCode = i.brandCode
+	inner join receipts r
+		on i.receiptId = r.receiptId
+	where dateScanned between add_months(current_date(), -1) and add_months(current_date(), -1)
+	group by b.name;
+
+
+
+--display current month ranking, previous month ranking and their difference in ranks for top 5 brands from current month
+
+select c.brand_name as brand_name, c.brand_rank as current_rank, p.brand_rank as previous_rank, (c.brand_rank - p.brand_rank) as rank_diff
+from brand_ranking_current_month c
+inner join brand_ranking_previous_month p
+	on c.brand_name = p.brand_name
+where c.brand_rank <= 5
+
+Q3) When considering average spend from receipts with 'rewardsReceiptStatus’ of ‘Accepted’ or ‘Rejected’, which is greater?
+
+A3)
+
+--table for average spend from receipts based on rewardsReceiptStatus
+
+create or replace temp view avg_spend_status as
+select rewardsReceiptStatus as status, avg(totalSpent) as avg_spend
+from receipts
+group by 1
+
+--display the status of greater average spend
+select status, avg_spend
+from avg_spend_status
+order by avg_spend desc
+limit 1
+
+Q4) When considering total number of items purchased from receipts with 'rewardsReceiptStatus’ of ‘Accepted’ or ‘Rejected’, which is greater?
+
+A4)
+
+--table for total item count based on rewardsReceiptStatus
+
+create or replace temp view total_items_purchased_status as
+select rewardsReceiptStatus as status, sum(purchasedItemCount) as total_items_purchased
+from receipts
+group by 1
+
+--display the status of greater total item count
+select status, total_items_purchased
+from total_items_purchased_status
+order by total_items_purchased desc
+limit 1
+
+Q5) Which brand has the most spend among users who were created within the past 6 months?
+
+A5)
+
+-- table for total spending by brands per users created within past 6 months
+
+create or replace temp view users_spending_p6 as
+select b.name as brand_name, sum(r.totalSpent) as total_spending
+from brands b
+inner join item_lists i
+	on b.barcode = i.barcode and b.brandCode = i.brandCode
+inner join receipts r
+	on r.receiptId = i.receiptId
+inner join users u
+	on u.userId = r.userId
+where u.createDate between add_months(current_date(), -6) and current_date()
+group by 1
+
+--display brand with most sales by users created within past 6 months
+
+select *
+from users_spending_p6
+order by total_spending desc
+limit 1
+
+Q6) Which brand has the most transactions among users who were created within the past 6 months?
+
+--table for total transactions by brands per users created within 6 months
+
+create or replace temp view users_transactions_p6 as
+select b.name as brand_name, count(i.receiptId) as transaction_count -- if each item in receipt is counted as a transaction otherwise count(distinct r.receiptId) as transaction_count
+from brands b
+inner join item_lists i
+	on b.barcode = i.barcode and b.brandCode = i.brandCode
+inner join receipts r
+	on r.receiptId = i.receiptId
+inner join users u
+	on u.userId = r.userId
+where u.createDate between add_months(current_date(), -6) and current_date()
+group by 1
+
+--display brand with most transactions by users created within past 6 months
+
+select *
+from users_transactions_p6
+order by transaction_count desc
+limit 1
+
+
+
